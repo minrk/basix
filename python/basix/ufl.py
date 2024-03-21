@@ -200,27 +200,6 @@ class _ElementBase(_AbstractFiniteElement):
             Tabulated basis functions
         """
 
-    @_abstractmethod
-    def get_component_element(self, flat_component: int) -> tuple[_typing.Any, int, int]:
-        """Get element that represents a component, and the offset and stride of the component.
-
-        For example, for a mixed element, this will return the
-        sub-element that represents the given component, the offset of
-        that sub-element, and a stride of 1. For a blocked element, this
-        will return the sub-element, an offset equal to the component
-        number, and a stride equal to the block size. For vector-valued
-        element (eg H(curl) and H(div) elements), this returns a
-        component element (and as offset of 0 and a stride of 1). When
-        tabulate is called on the component element, only the part of the
-        table for the given component is returned.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-        """
-
     @_abstractproperty
     def ufcx_element_type(self) -> str:
         """Element type."""
@@ -416,32 +395,6 @@ class _BasixElement(_ElementBase):
         # TODO: update FFCx to remove the need for transposing here
         return tab.transpose((0, 1, 3, 2)).reshape((tab.shape[0], tab.shape[1], -1))
 
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        For example, for a mixed element, this will return the
-        sub-element that represents the given component, the offset of
-        that sub-element, and a stride of 1. For a blocked element, this
-        will return the sub-element, an offset equal to the component
-        number, and a stride equal to the block size. For vector-valued
-        element (eg H(curl) and H(div) elements), this returns a
-        component element (and as offset of 0 and a stride of 1). When
-        tabulate is called on the component element, only the part of
-        the table for the given component is returned.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-
-        """
-        assert flat_component < self.reference_value_size
-        return _ComponentElement(self, flat_component), 0, 1
-
     def get_tensor_product_representation(self):
         """Get the element's tensor product factorisation."""
         if not self.has_tensor_product_factorisation:
@@ -616,218 +569,6 @@ class _BasixElement(_ElementBase):
         return self._element
 
 
-class _ComponentElement(_ElementBase):
-    """An element representing one component of a _BasixElement.
-
-    This element type is used when UFL's ``get_component_element``
-    function is called.
-
-    """
-
-    _element: _ElementBase
-    _component: int
-
-    def __init__(self, element: _ElementBase, component: int):
-        """Initialise the element."""
-        self._element = element
-        self._component = component
-        repr = f"component element ({element!r}, {component}"
-        repr += ")"
-        super().__init__(repr, element.cell_type.name, (1,), element._degree)
-
-    def __eq__(self, other) -> bool:
-        """Check if two elements are equal."""
-        return (
-            isinstance(other, _ComponentElement)
-            and self._element == other._element
-            and self._component == other._component
-        )
-
-    def __hash__(self) -> int:
-        """Return a hash."""
-        return super().__hash__()
-
-    def tabulate(self, nderivs: int, points: _npt.NDArray[np.float64]) -> _npt.NDArray[np.float64]:
-        """Tabulate the basis functions of the element.
-
-        Args:
-            nderivs: Number of derivatives to tabulate.
-            points: Points to tabulate at.
-
-        Returns:
-            Tabulated basis functions.
-        """
-        tables = self._element.tabulate(nderivs, points)
-        output = []
-        for tbl in tables:
-            shape = (points.shape[0], *self._element._reference_value_shape, -1)
-            tbl = tbl.reshape(shape)
-            if len(self._element._reference_value_shape) == 0:
-                output.append(tbl)
-            elif len(self._element._reference_value_shape) == 1:
-                output.append(tbl[:, self._component, :])
-            elif len(self._element._reference_value_shape) == 2:
-                if isinstance(self._element, _BlockedElement) and self._element._has_symmetry:
-                    # FIXME: check that this behaves as expected
-                    output.append(tbl[:, self._component, :])
-                else:
-                    vs0 = self._element._reference_value_shape[0]
-                    output.append(tbl[:, self._component // vs0, self._component % vs0, :])
-            else:
-                raise NotImplementedError()
-        return np.asarray(output, dtype=np.float64)
-
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-        """
-        if flat_component == 0:
-            return self, 0, 1
-        else:
-            raise NotImplementedError()
-
-    @property
-    def basix_sobolev_space(self):
-        """Return a Basix enum representing the underlying Sobolev space."""
-        return self._element.basix_sobolev_space
-
-    @property
-    def dim(self) -> int:
-        """Number of DOFs the element has."""
-        raise NotImplementedError()
-
-    @property
-    def num_entity_dofs(self) -> list[list[int]]:
-        """Number of DOFs associated with each entity."""
-        raise NotImplementedError()
-
-    @property
-    def entity_dofs(self) -> list[list[list[int]]]:
-        """DOF numbers associated with each entity."""
-        raise NotImplementedError()
-
-    @property
-    def num_entity_closure_dofs(self) -> list[list[int]]:
-        """Number of DOFs associated with the closure of each entity."""
-        raise NotImplementedError()
-
-    @property
-    def entity_closure_dofs(self) -> list[list[list[int]]]:
-        """DOF numbers associated with the closure of each entity."""
-        raise NotImplementedError()
-
-    @property
-    def num_global_support_dofs(self) -> int:
-        """Get the number of global support DOFs."""
-        raise NotImplementedError()
-
-    @property
-    def family_name(self) -> str:
-        """Family name of the element."""
-        raise NotImplementedError()
-
-    @property
-    def reference_topology(self) -> list[list[list[int]]]:
-        """Topology of the reference element."""
-        raise NotImplementedError()
-
-    @property
-    def reference_geometry(self) -> _npt.NDArray[np.float64]:
-        """Geometry of the reference element."""
-        raise NotImplementedError()
-
-    @property
-    def element_family(self) -> _typing.Union[_basix.ElementFamily, None]:
-        """Basix element family used to initialise the element."""
-        return self._element.element_family
-
-    @property
-    def lagrange_variant(self) -> _typing.Union[_basix.LagrangeVariant, None]:
-        """Basix Lagrange variant used to initialise the element."""
-        return self._element.lagrange_variant
-
-    @property
-    def dpc_variant(self) -> _typing.Union[_basix.DPCVariant, None]:
-        """Basix DPC variant used to initialise the element."""
-        return self._element.dpc_variant
-
-    @property
-    def cell_type(self) -> _basix.CellType:
-        """Basix cell type used to initialise the element."""
-        return self._element.cell_type
-
-    @property
-    def polyset_type(self) -> _basix.PolysetType:
-        return self._element.polyset_type
-
-    @property
-    def discontinuous(self) -> bool:
-        """True if the discontinuous version of the element is used."""
-        return self._element.discontinuous
-
-    @property
-    def interpolation_nderivs(self) -> int:
-        """The number of derivatives needed when interpolating."""
-        return self._element.interpolation_nderivs
-
-    @property
-    def ufcx_element_type(self) -> str:
-        """Element type."""
-        raise NotImplementedError()
-
-    @property
-    def map_type(self) -> _basix.MapType:
-        """The Basix map type."""
-        raise NotImplementedError()
-
-    @property
-    def embedded_superdegree(self) -> int:
-        """Degree of the minimum degree Lagrange space that spans this element.
-
-        This returns the degree of the lowest degree Lagrange space such
-        that the polynomial space of the Lagrange space is a superspace
-        of this element's polynomial space. If this element contains
-        basis functions that are not in any Lagrange space, this
-        function should return ``None``.
-
-        Note that on a simplex cells, the polynomial space of Lagrange
-        space is a complete polynomial space, but on other cells this is
-        not true. For example, on quadrilateral cells, the degree 1
-        Lagrange space includes the degree 2 polynomial xy.
-        """
-        return self._element.embedded_superdegree
-
-    @property
-    def embedded_subdegree(self) -> int:
-        """Degree of the maximum degree Lagrange space that is spanned by this element.
-
-        This returns the degree of the highest degree Lagrange space
-        such that the polynomial space of the Lagrange space is a
-        subspace of this element's polynomial space. If this element's
-        polynomial space does not include the constant function, this
-        function should return -1.
-
-        Note that on a simplex cells, the polynomial space of Lagrange
-        space is a complete polynomial space, but on other cells this is
-        not true. For example, on quadrilateral cells, the degree 1
-        Lagrange space includes the degree 2 polynomial xy.
-        """
-        return self._element.embedded_subdegree
-
-    @property
-    def basix_element(self):
-        """Underlying Basix element."""
-        return self._element
-
-
 class _MixedElement(_ElementBase):
     """A mixed element that combines two or more elements.
 
@@ -896,36 +637,6 @@ class _MixedElement(_ElementBase):
                     start += self.reference_value_size
             tables.append(new_table)
         return np.asarray(tables, dtype=np.float64)
-
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-        """
-        sub_dims = [0] + [e.dim for e in self._sub_elements]
-        sub_cmps = [0] + [e.reference_value_size for e in self._sub_elements]
-
-        irange = np.cumsum(sub_dims)
-        crange = np.cumsum(sub_cmps)
-
-        # Find index of sub element which corresponds to the current
-        # flat component
-        component_element_index = np.where(crange <= flat_component)[0].shape[0] - 1
-
-        sub_e = self._sub_elements[component_element_index]
-
-        e, offset, stride = sub_e.get_component_element(
-            flat_component - crange[component_element_index]
-        )
-        # TODO: is this offset correct?
-        return e, irange[component_element_index] + offset, stride
 
     @property
     def embedded_superdegree(self) -> int:
@@ -1229,21 +940,6 @@ class _BlockedElement(_ElementBase):
             output.append(new_table)
         return np.asarray(output, dtype=np.float64)
 
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-
-        """
-        return self._sub_element, flat_component, self._block_size
-
     def get_tensor_product_representation(self):
         """Get the element's tensor product factorisation."""
         if not self.has_tensor_product_factorisation:
@@ -1538,20 +1234,6 @@ class _QuadratureElement(_ElementBase):
         tables = np.asarray([np.eye(points.shape[0], points.shape[0])])
         return tables
 
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-        """
-        return self, 0, 1
-
     def custom_quadrature(self) -> tuple[_npt.NDArray[np.float64], _npt.NDArray[np.float64]]:
         """Return custom quadrature rule or raise a ValueError."""
         return self._points, self._weights
@@ -1740,22 +1422,6 @@ class _RealElement(_ElementBase):
         for v in range(self.reference_value_size):
             out[0, :, self.reference_value_size * v + v] = 1.0
         return out
-
-    def get_component_element(self, flat_component: int) -> tuple[_ElementBase, int, int]:
-        """Get element that represents a component.
-
-        Element that represents a component of the element, and the
-        offset and stride of the component.
-
-        Args:
-            flat_component: The component
-
-        Returns:
-            component element, offset of the component, stride of the component
-
-        """
-        assert flat_component < self.reference_value_size
-        return self, 0, 1
 
     @property
     def ufcx_element_type(self) -> str:
