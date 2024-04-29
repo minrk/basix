@@ -248,5 +248,4 @@ def test_wrap_element():
 )
 def test_hashes(inputs):
     element = basix.ufl.element(*inputs)
-    print(hash(element))
     assert hash(element) == hash(element._element)
