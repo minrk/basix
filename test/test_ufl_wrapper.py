@@ -234,3 +234,19 @@ def test_real_element_eq_hash(cell_type, value_shape):
 def test_wrap_element():
     e = basix.create_element(basix.ElementFamily.P, basix.CellType.triangle, 1)
     basix.ufl.wrap_element(e)
+
+
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        ("Lagrange", "triangle", 1),
+        ("Lagrange", "triangle", 2),
+        ("Lagrange", "triangle", 3),
+        ("Raviart-Thomas", "triangle", 3),
+        ("Raviart-Thomas", "quadrilateral", 2),
+    ],
+)
+def test_hashes(inputs):
+    element = basix.ufl.element(*inputs)
+    print(hash(element))
+    assert hash(element) == hash(element._element)

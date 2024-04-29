@@ -118,9 +118,9 @@ class _ElementBase(_AbstractFiniteElement):
         """Format as string for nice printing."""
         return self._repr
 
+    @_abstractmethod
     def __hash__(self) -> int:
         """Return a hash."""
-        return hash("basix" + self._repr)
 
     @_abstractmethod
     def __eq__(self, other) -> bool:
@@ -416,7 +416,7 @@ class _BasixElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return self._element.__hash__()
 
     def tabulate(self, nderivs: int, points: _npt.NDArray[np.float64]) -> _npt.NDArray[np.float64]:
         """Tabulate the basis functions of the element.
@@ -659,7 +659,7 @@ class _ComponentElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return hash(self._repr)
 
     def tabulate(self, nderivs: int, points: _npt.NDArray[np.float64]) -> _npt.NDArray[np.float64]:
         """Tabulate the basis functions of the element.
@@ -880,7 +880,7 @@ class _MixedElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return hash(self._repr)
 
     @property
     def dtype(self) -> _npt.DTypeLike:
@@ -1219,7 +1219,7 @@ class _BlockedElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return hash(self._repr)
 
     @property
     def dtype(self) -> _npt.DTypeLike:
@@ -1558,7 +1558,7 @@ class _QuadratureElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return hash(self._repr)
 
     def tabulate(self, nderivs: int, points: _npt.NDArray[np.float64]) -> _npt.NDArray[np.float64]:
         """Tabulate the basis functions of the element.
@@ -1765,7 +1765,7 @@ class _RealElement(_ElementBase):
 
     def __hash__(self) -> int:
         """Return a hash."""
-        return super().__hash__()
+        return hash(self._repr)
 
     @property
     def dtype(self) -> _npt.DTypeLike:
